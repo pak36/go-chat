@@ -1,13 +1,15 @@
 package main
 
 type message struct {
-	data []byte
-	room string
+	data     []byte
+	room     string
+	userName string
 }
 
 type subscription struct {
-	conn *connection
-	room string
+	conn     *connection
+	room     string
+	userName string
 }
 
 // hub maintains the set of active connections and broadcasts messages to the
