@@ -1,7 +1,7 @@
 package main
 
 import (
-	"fmt"
+	"encoding/json"
 	"log"
 	"net/http"
 	"time"
@@ -34,7 +34,14 @@ type connection struct {
 	ws *websocket.Conn
 
 	// Buffered channel of outbound messages.
-	send chan []byte
+	send     chan []byte
+	userName string
+}
+
+type MsgSend struct {
+	Room     string `json:"room, string"`
+	UserName string `json:"userName, string"`
+	Message  string `json:"message, string"`
 }
 
 // readPump pumps messages from the websocket connection to the hub.
@@ -55,7 +62,7 @@ func (s subscription) readPump() {
 			}
 			break
 		}
-		m := message{msg, s.room}
+		m := message{msg, s.room, s.userName}
 		h.broadcast <- m
 	}
 }
@@ -69,6 +76,7 @@ func (c *connection) write(mt int, payload []byte) error {
 // writePump pumps messages from the hub to the websocket connection.
 func (s *subscription) writePump() {
 	c := s.conn
+
 	ticker := time.NewTicker(pingPeriod)
 	defer func() {
 		ticker.Stop()
@@ -81,7 +89,15 @@ func (s *subscription) writePump() {
 				c.write(websocket.CloseMessage, []byte{})
 				return
 			}
-			if err := c.write(websocket.TextMessage, message); err != nil {
+
+			msgSend := MsgSend{
+				Room:     s.room,
+				UserName: s.userName,
+				Message:  string(message),
+			}
+			msg, _ := json.Marshal(msgSend)
+
+			if err := c.write(websocket.TextMessage, msg); err != nil {
 				return
 			}
 		case <-ticker.C:
@@ -93,15 +109,15 @@ func (s *subscription) writePump() {
 }
 
 // serveWs handles websocket requests from the peer.
-func serveWs(w http.ResponseWriter, r *http.Request, roomId string) {
-	fmt.Print(roomId)
+func serveWs(w http.ResponseWriter, r *http.Request, roomId string, userName string) {
+
 	ws, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
 		log.Println(err.Error())
 		return
 	}
-	c := &connection{send: make(chan []byte, 256), ws: ws}
-	s := subscription{c, roomId}
+	c := &connection{send: make(chan []byte, 256), ws: ws, userName: userName}
+	s := subscription{c, roomId, userName}
 	h.register <- s
 	go s.writePump()
 	go s.readPump()
